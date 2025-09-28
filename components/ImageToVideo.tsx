@@ -1,8 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ImageUploader } from './ImageUploader';
 import { EmptyState } from './EmptyState';
-import { generateVideo, getVideosOperation } from '../services/geminiService';
-import { fileToBase64 } from '../utils/imageUtils';
 import { CameraMovement } from '../types';
 
 const loadingMessages = [
@@ -18,6 +16,8 @@ const loadingMessages = [
 
 interface ImageToVideoProps {
   apiKey: string | null;
+  apiBaseUrl?: string;
+  imageModel?: string;
   onApiKeyNeeded: () => void;
   onResult: (prompt: string, videoUrl: string, sourceImage: string, cameraMovement: CameraMovement) => Promise<void>;
   initialPrompt: string;
@@ -53,15 +53,17 @@ const SettingButton: React.FC<{
 );
 
 export const ImageToVideo: React.FC<ImageToVideoProps> = ({
-  apiKey,
-  onApiKeyNeeded,
-  onResult,
+  apiKey: _apiKey,
+  apiBaseUrl: _apiBaseUrl,
+  imageModel: _imageModel,
+  onApiKeyNeeded: _onApiKeyNeeded,
+  onResult: _onResult,
   initialPrompt,
   onPromptChange,
   initialStartFile,
   onStartFileChange,
   generatedVideoUrl,
-  onGenerationStart,
+  onGenerationStart: _onGenerationStart,
   onGenerationEnd,
   isLoading,
   cameraMovement,
@@ -69,11 +71,8 @@ export const ImageToVideo: React.FC<ImageToVideoProps> = ({
 }) => {
   const [startFile, setStartFile] = useState<File[]>(initialStartFile ? [initialStartFile] : []);
   const [error, setError] = useState<string | null>(null);
-  const [operation, setOperation] = useState<any>(null);
   const [loadingMessage, setLoadingMessage] = useState(loadingMessages[0]);
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>('16:9');
-
-  const pollingIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
     setStartFile(initialStartFile ? [initialStartFile] : []);
@@ -95,64 +94,10 @@ export const ImageToVideo: React.FC<ImageToVideoProps> = ({
     }
   }, [isLoading]);
 
-  const pollOperation = async (op: any) => {
-    if (!apiKey) {
-      onGenerationEnd();
-      return;
-    }
-    try {
-        const updatedOp = await getVideosOperation(op, apiKey);
-        setOperation(updatedOp);
-
-        if (updatedOp.done) {
-            if (pollingIntervalRef.current) clearTimeout(pollingIntervalRef.current);
-
-            const videoUri = updatedOp.response?.generatedVideos?.[0]?.video?.uri;
-            if (videoUri && startFile.length > 0) {
-                const finalUrl = `${videoUri}&key=${apiKey}`;
-                const startImageBase64 = await fileToBase64(startFile[0]);
-                await onResult(initialPrompt, finalUrl, startImageBase64, cameraMovement);
-            } else {
-                setError("视频生成完成，但未能获取视频链接或缺少起始图片。");
-            }
-            onGenerationEnd();
-        } else {
-            pollingIntervalRef.current = window.setTimeout(() => pollOperation(updatedOp), 10000);
-        }
-    } catch(err) {
-        setError(err instanceof Error ? err.message : '轮询视频状态时发生错误。');
-        onGenerationEnd();
-    }
-  };
-
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!apiKey) {
-      onApiKeyNeeded();
-      return;
-    }
-    if (startFile.length === 0) {
-      setError('请上传一张图片。');
-      return;
-    }
-    if (!initialPrompt.trim()) {
-      setError('请输入您的创意指令。');
-      return;
-    }
-
-    setError(null);
-    onGenerationStart();
-    setOperation(null);
-    setLoadingMessage(loadingMessages[0]);
-
-    try {
-      const op = await generateVideo(initialPrompt, startFile[0], aspectRatio, cameraMovement, apiKey);
-      setOperation(op);
-      pollOperation(op);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '发生未知错误。');
-      onGenerationEnd();
-    }
+    setError('当前 OpenAI API 尚未提供视频生成功能。');
+    onGenerationEnd();
   };
 
   const handleDownload = () => {
@@ -176,6 +121,9 @@ export const ImageToVideo: React.FC<ImageToVideoProps> = ({
           <p className="mt-4 text-base md:text-lg text-slate-600 max-w-2xl mx-auto">
             上传您的图片，描述您想看到的动态场景，让 AI 为您创造视频。
           </p>
+          <div className="mt-6 max-w-3xl mx-auto px-4 py-3 rounded-2xl bg-amber-100 text-amber-800 border border-amber-200">
+            当前集成的 OpenAI API 暂未提供视频生成功能，因此此模块暂不可用。您仍可使用其它图像相关功能。
+          </div>
           <div className="max-w-5xl mx-auto mt-10 text-left bg-white p-6 md:p-8 rounded-2xl shadow-xl border border-slate-200">
             <form onSubmit={handleGenerate}>
                 <div className="grid md:grid-cols-12 gap-8 items-stretch">

@@ -50,21 +50,6 @@ export const IllustratedWiki: React.FC<IllustratedWikiProps> = ({
     </button>
   );
 
-  const ModelButton = ({ value, label }: { value: ImageModel; label: string; }) => (
-    <button
-      type="button"
-      onClick={() => onModelChange(value)}
-      disabled={isLoading}
-      className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors duration-200 border disabled:cursor-not-allowed disabled:opacity-60 ${
-        activeModel === value
-          ? 'bg-slate-700 text-white border-slate-700'
-          : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
-      }`}
-    >
-      {label}
-    </button>
-  );
-
   return (
     <div className="w-full max-w-4xl mx-auto text-center">
       <h1 className="text-4xl md:text-6xl font-extrabold text-slate-800 tracking-tight">
@@ -123,10 +108,9 @@ export const IllustratedWiki: React.FC<IllustratedWikiProps> = ({
           </div>
           <div className="flex items-center justify-center gap-3">
             <span className="text-slate-600 text-sm font-medium">模型：</span>
-            <div className="flex items-center justify-center gap-2 bg-slate-100 p-1 rounded-full">
-              <ModelButton value={ImageModel.IMAGEN} label="Imagen 4.0" />
-              <ModelButton value={ImageModel.NANO_BANANA} label="Nano-Banana" />
-            </div>
+            <span className="px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-700 text-white">
+              {activeModel || 'gpt-image-1'}
+            </span>
           </div>
         </div>
       </form>

@@ -17,6 +17,8 @@ import { StarIcon } from './icons/StarIcon';
 
 interface TextToImageProps {
   apiKey: string | null;
+  apiBaseUrl?: string;
+  imageModel?: string;
   onApiKeyNeeded: () => void;
   onGenerate: () => void;
   prompt: string;
@@ -60,6 +62,8 @@ const SettingButton: React.FC<{
 
 export const TextToImage: React.FC<TextToImageProps> = ({
   apiKey,
+  apiBaseUrl,
+  imageModel,
   onApiKeyNeeded,
   onGenerate,
   prompt,
@@ -281,6 +285,8 @@ export const TextToImage: React.FC<TextToImageProps> = ({
         onClose={() => setEditingImage(null)}
         image={editingImage}
         apiKey={apiKey}
+        apiBaseUrl={apiBaseUrl}
+        imageModel={imageModel}
         onComplete={handleInpaintingComplete}
         onApiKeyNeeded={onApiKeyNeeded}
       />

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GeneratedImage } from '../types';
-import { generateInpainting } from '../services/geminiService';
+import { generateInpainting } from '../services/openaiService';
 import { base64ToFile } from '../utils/imageUtils';
 
 interface InpaintingModalProps {
@@ -10,6 +10,8 @@ interface InpaintingModalProps {
   onClose: () => void;
   image: GeneratedImage | null;
   apiKey: string | null;
+  apiBaseUrl?: string;
+  imageModel?: string;
   onComplete: (newImageSrc: string) => void;
   onApiKeyNeeded: () => void;
 }
@@ -37,7 +39,7 @@ const drawPaths = (ctx: CanvasRenderingContext2D, pathsToDraw: Path[]) => {
     });
 };
 
-export const InpaintingModal: React.FC<InpaintingModalProps> = ({ isOpen, onClose, image, apiKey, onComplete, onApiKeyNeeded }) => {
+export const InpaintingModal: React.FC<InpaintingModalProps> = ({ isOpen, onClose, image, apiKey, apiBaseUrl, imageModel, onComplete, onApiKeyNeeded }) => {
   const [prompt, setPrompt] = useState('');
   const [brushSize, setBrushSize] = useState(BRUSH_SIZES.medium);
   const [isLoading, setIsLoading] = useState(false);
@@ -223,7 +225,7 @@ export const InpaintingModal: React.FC<InpaintingModalProps> = ({ isOpen, onClos
             createMaskFile(),
         ]);
         
-        const result = await generateInpainting(prompt, originalFile, maskFile, apiKey);
+        const result = await generateInpainting(prompt, originalFile, maskFile, apiKey, apiBaseUrl || undefined, imageModel);
         
         if (result.length > 0) {
             setGeneratedResultSrc(result[0]);

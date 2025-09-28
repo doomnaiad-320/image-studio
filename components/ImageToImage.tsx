@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { GeneratedImage, AspectRatio, InspirationStrength } from '../types';
-import { generateFromImageAndPrompt, generateWithStyleInspiration } from '../services/geminiService';
+import { generateFromImageAndPrompt, generateWithStyleInspiration } from '../services/openaiService';
 import { ImageUploader } from './ImageUploader';
 import { LoadingState } from './LoadingState';
 import { ImageGrid } from './ImageGrid';
@@ -18,6 +18,8 @@ import { SquareIcon, RectangleHorizontalIcon, RectangleVerticalIcon } from './ic
 
 interface ImageToImageProps {
   apiKey: string | null;
+  apiBaseUrl?: string;
+  imageModel?: string;
   onApiKeyNeeded: () => void;
   onGenerationStart: () => void;
   onGenerationEnd: () => void;
@@ -63,6 +65,8 @@ const ModeButton: React.FC<{
 
 export const ImageToImage: React.FC<ImageToImageProps> = ({ 
   apiKey, 
+  apiBaseUrl,
+  imageModel,
   onApiKeyNeeded, 
   onGenerationStart,
   onGenerationEnd,
@@ -146,10 +150,10 @@ export const ImageToImage: React.FC<ImageToImageProps> = ({
       let resultSettings: { strength?: InspirationStrength } = {};
 
       if (i2iMode === 'inspiration') {
-        imageUrls = await generateWithStyleInspiration(uploadedFiles[0], prompt, apiKey, inspirationStrength);
+        imageUrls = await generateWithStyleInspiration(uploadedFiles[0], prompt, apiKey, inspirationStrength, apiBaseUrl || undefined, imageModel);
         resultSettings = { strength: inspirationStrength };
       } else {
-        imageUrls = await generateFromImageAndPrompt(prompt, uploadedFiles, apiKey);
+        imageUrls = await generateFromImageAndPrompt(prompt, uploadedFiles, apiKey, apiBaseUrl || undefined, imageModel);
       }
       
       const resizedImageUrls = await Promise.all(
@@ -396,6 +400,8 @@ export const ImageToImage: React.FC<ImageToImageProps> = ({
         onClose={() => setEditingImage(null)}
         image={editingImage}
         apiKey={apiKey}
+        apiBaseUrl={apiBaseUrl}
+        imageModel={imageModel}
         onComplete={handleInpaintingComplete}
         onApiKeyNeeded={onApiKeyNeeded}
       />

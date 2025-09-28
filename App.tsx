@@ -19,8 +19,8 @@ import { TagManager } from './components/TagManager';
 import { ComicPanelEditorModal } from './components/ComicPanelEditorModal';
 // 新增导入导出模态框组件
 import { ImportExportModal } from './components/ImportExportModal';
-import { ImageStyle, GeneratedImage, HistoryRecord, AppMode, CameraMovement, ImageModel, AspectRatio, InspirationStrength, ComicStripGenerationPhase, ComicStripPanelStatus, ComicStripTransitionStatus, ComicStripTransitionOption } from './types';
-import { generateIllustratedCards, generateTextToImage, generateComicStrip, generateVideoScriptsForComicStrip, generateVideo, getVideosOperation, generateVideoTransition } from './services/geminiService';
+import { ImageStyle, GeneratedImage, HistoryRecord, AppMode, CameraMovement, ImageModel, AspectRatio, InspirationStrength, ComicStripGenerationPhase, ComicStripPanelStatus, ComicStripTransitionStatus, ComicStripTransitionOption, DEFAULT_IMAGE_MODEL } from './types';
+import { generateIllustratedCards, generateTextToImage, generateComicStrip, generateVideoScriptsForComicStrip } from './services/openaiService';
 import { addHistory, getAllHistory, clearHistory, removeHistoryItem, getTags, saveTags, findHistoryBySourceImage } from './services/historyService';
 import { resizeImage, createThumbnail, base64ToFile, fileToBase64 } from './utils/imageUtils';
 import { stitchVideos } from './utils/videoUtils';
@@ -40,6 +40,8 @@ const sortHistory = (historyArray: HistoryRecord[]): HistoryRecord[] => {
   });
 };
 
+const VIDEO_UNSUPPORTED_MESSAGE = '当前 OpenAI API 尚未提供视频生成功能。';
+
 const App: React.FC = () => {
   const [appMode, setAppMode] = useState<AppMode>('wiki');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -54,7 +56,8 @@ const App: React.FC = () => {
   // State for Wiki mode
   const [wikiPrompt, setWikiPrompt] = useState<string>('');
   const [activeStyle, setActiveStyle] = useState<ImageStyle>(ImageStyle.ILLUSTRATION);
-  const [wikiModel, setWikiModel] = useState<ImageModel>(ImageModel.IMAGEN);
+  const [wikiModel, setWikiModel] = useState<ImageModel>(DEFAULT_IMAGE_MODEL);
+  const [selectedImageModel, setSelectedImageModel] = useState<ImageModel>(DEFAULT_IMAGE_MODEL);
   const [cachedImages, setCachedImages] = useState<Record<string, Partial<Record<ImageStyle, Partial<Record<ImageModel, GeneratedImage[]>>>>>>({});
 
   // State for ComicStrip mode
@@ -102,6 +105,7 @@ const App: React.FC = () => {
   const [videoCameraMovement, setVideoCameraMovement] = useState<CameraMovement>('subtle');
 
   const [apiKey, setApiKey] = useState<string | null>(null);
+  const [apiBaseUrl, setApiBaseUrl] = useState<string>('');
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
   const [isEnvApiKey, setIsEnvApiKey] = useState<boolean>(false); // 新增状态，用于标识是否使用环境变量中的API Key
 
@@ -113,15 +117,30 @@ const App: React.FC = () => {
 
   useEffect(() => {
     // 首先检查环境变量中的API密钥
-    const envApiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+    const envApiKey = import.meta.env.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+    const envBaseUrl = import.meta.env.VITE_OPENAI_BASE_URL || process.env.OPENAI_BASE_URL || '';
+    const envImageModel = import.meta.env.VITE_OPENAI_IMAGE_MODEL || process.env.OPENAI_IMAGE_MODEL || DEFAULT_IMAGE_MODEL;
+
     if (envApiKey) {
       setApiKey(envApiKey);
+      setApiBaseUrl(envBaseUrl);
+      setSelectedImageModel(envImageModel);
+      setWikiModel(envImageModel);
       setIsEnvApiKey(true); // 标记使用环境变量中的API Key
     } else {
       // 如果环境变量中没有API密钥，则检查localStorage
-      const genericKey = localStorage.getItem('gemini-api-key-generic');
+      const genericKey = localStorage.getItem('openai-api-key');
+      const storedBaseUrl = localStorage.getItem('openai-base-url');
+      const storedModel = localStorage.getItem('openai-image-model');
       if (genericKey) {
         setApiKey(genericKey);
+      }
+      if (storedBaseUrl) {
+        setApiBaseUrl(storedBaseUrl);
+      }
+      if (storedModel) {
+        setSelectedImageModel(storedModel);
+        setWikiModel(storedModel);
       }
     }
   }, []);
@@ -144,7 +163,7 @@ const App: React.FC = () => {
 
   const handleGenerateWiki = async () => {
     if (!apiKey) {
-      setError('请先设置您的 Gemini API Key。');
+      setError('请先设置您的 OpenAI API Key。');
       setIsApiKeyModalOpen(true);
       return;
     }
@@ -152,9 +171,10 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     setPreviewImageIndex(null);
+    setWikiModel(selectedImageModel);
 
     try {
-      const imageUrls = await generateIllustratedCards(wikiPrompt, activeStyle, wikiModel, apiKey);
+      const imageUrls = await generateIllustratedCards(wikiPrompt, activeStyle, selectedImageModel, apiKey, apiBaseUrl || undefined);
 
       const resizedImageUrls = await Promise.all(
           imageUrls.map(src => resizeImage(src))
@@ -213,7 +233,7 @@ const App: React.FC = () => {
   
   const handleGenerateComicStrip = async () => {
     if (!apiKey) {
-        setError('请先设置您的 Gemini API Key。');
+        setError('请先设置您的 OpenAI API Key。');
         setIsApiKeyModalOpen(true);
         return;
     }
@@ -226,7 +246,7 @@ const App: React.FC = () => {
     setComicStripVideoGenerationPhase('idle');
 
     try {
-        const { imageUrls, panelPrompts } = await generateComicStrip(comicStripStory, comicStripStyle, apiKey, comicStripNumImages);
+        const { imageUrls, panelPrompts } = await generateComicStrip(comicStripStory, comicStripStyle, apiKey, comicStripNumImages, apiBaseUrl || undefined, selectedImageModel);
         const resizedImageUrls = await Promise.all(imageUrls.map(src => resizeImage(src, 800)));
         const imagesWithIds: GeneratedImage[] = resizedImageUrls.map((src, index) => ({
             id: `${Date.now()}-${index}`,
@@ -242,7 +262,7 @@ const App: React.FC = () => {
                 mode: 'comicStrip',
                 prompt: comicStripStory,
                 style: comicStripStyle,
-                model: ImageModel.IMAGEN,
+            model: selectedImageModel,
                 images: imagesWithIds,
                 thumbnail,
                 timestamp: Date.now(),
@@ -263,7 +283,7 @@ const App: React.FC = () => {
 
   const handleGenerateComicToVideoScripts = async () => {
     if (!apiKey) {
-      setError('请先设置您的 Gemini API Key。');
+      setError('请先设置您的 OpenAI API Key。');
       setIsApiKeyModalOpen(true);
       return;
     }
@@ -275,7 +295,7 @@ const App: React.FC = () => {
     setError(null);
 
     try {
-      const scripts = await generateVideoScriptsForComicStrip(comicStripStory, comicStripImages, apiKey);
+      const scripts = await generateVideoScriptsForComicStrip(comicStripStory, comicStripImages, apiKey, apiBaseUrl || undefined);
       setComicStripVideoScripts(scripts);
       setComicStripVideoGenerationPhase('editing');
     } catch (err) {
@@ -304,277 +324,24 @@ const App: React.FC = () => {
 
   const handleGenerateComicToVideoSimple = async () => {
     if (!apiKey) return;
-    try {
-        setComicStripVideoGenerationPhase('generating_panels');
-        setError(null);
-        setComicStripVideoUrls(new Array(comicStripImages.length).fill(null));
-        setComicStripTransitionUrls([]);
-        setComicStripPanelStatuses(new Array(comicStripImages.length).fill('queued'));
-
-        const parentRecord = history.find(rec => rec.id === selectedHistoryId);
-        if (!parentRecord) throw new Error('找不到原始的连环画记录。');
-
-        const concurrencyLimit = 2;
-        const allGeneratedUrls: (string | null)[] = new Array(comicStripImages.length).fill(null);
-
-        for (let i = 0; i < comicStripImages.length; i += concurrencyLimit) {
-            const chunk = comicStripImages.slice(i, i + concurrencyLimit);
-            
-            await Promise.all(chunk.map(async (image, chunkIndex) => {
-                const originalIndex = i + chunkIndex;
-                setComicStripPanelStatuses(prev => { const newStatuses = [...prev]; newStatuses[originalIndex] = 'generating'; return newStatuses; });
-
-                const script = comicStripVideoScripts[originalIndex];
-                if (!script?.trim()) {
-                    setComicStripPanelStatuses(prev => { const newStatuses = [...prev]; newStatuses[originalIndex] = 'completed'; return newStatuses; });
-                    return;
-                }
-
-                try {
-                    const file = await base64ToFile(image.src, `comic-panel-${originalIndex}.png`);
-                    let operation = await generateVideo(script, file, '16:9', 'subtle', apiKey);
-
-                    while (!operation.done) {
-                        await new Promise(resolve => setTimeout(resolve, 5000));
-                        operation = await getVideosOperation(operation, apiKey);
-                    }
-
-                    const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-                    if (downloadLink) {
-                        const finalUrl = `${downloadLink}&key=${apiKey}`;
-                        allGeneratedUrls[originalIndex] = finalUrl;
-                        setComicStripVideoUrls(prev => { const newUrls = [...prev]; newUrls[originalIndex] = finalUrl; return newUrls; });
-                    } else {
-                        throw new Error(`Failed to get video URI for panel ${originalIndex + 1}`);
-                    }
-                } catch (err) {
-                     console.error(`Failed to generate video for panel ${originalIndex + 1}.`, err);
-                } finally {
-                    setComicStripPanelStatuses(prev => { const newStatuses = [...prev]; newStatuses[originalIndex] = 'completed'; return newStatuses; });
-                }
-            }));
-        }
-        
-        setComicStripVideoGenerationPhase('completed');
-
-        const newRecord: HistoryRecord = {
-            id: `${Date.now()}`,
-            mode: 'comicStrip',
-            prompt: parentRecord.prompt,
-            style: parentRecord.style,
-            model: parentRecord.model,
-            images: parentRecord.images,
-            comicStripPanelPrompts: parentRecord.comicStripPanelPrompts,
-            thumbnail: parentRecord.thumbnail,
-            timestamp: Date.now(),
-            comicStripNumImages: parentRecord.comicStripNumImages,
-            videoScripts: comicStripVideoScripts,
-            videoUrls: allGeneratedUrls,
-            parentId: parentRecord.id,
-            comicStripType: 'video',
-            transitionOption: 'none',
-        };
-        await addHistory(newRecord);
-        setHistory(prev => sortHistory([newRecord, ...prev]));
-        setSelectedHistoryId(newRecord.id);
-    } catch (err) {
-        setError(err instanceof Error ? err.message : '批量生成视频时发生错误。');
-        setComicStripVideoGenerationPhase('editing');
-    }
+    setError(VIDEO_UNSUPPORTED_MESSAGE);
+    setComicStripVideoGenerationPhase('idle');
   };
 
   const handleGenerateComicToVideoWithTransitions = async () => {
     if (!apiKey) return;
-    try {
-        setError(null);
-        // Step 1: Setup
-        setComicStripVideoGenerationPhase('generating_panels');
-        setComicStripVideoUrls(new Array(comicStripImages.length).fill(null));
-        setComicStripTransitionUrls(new Array(comicStripImages.length - 1).fill(null));
-        setComicStripPanelStatuses(new Array(comicStripImages.length).fill('queued'));
-        setComicStripTransitionStatuses(new Array(comicStripImages.length - 1).fill('queued'));
-
-        const parentRecord = history.find(rec => rec.id === selectedHistoryId);
-        if (!parentRecord) throw new Error('找不到原始的连环画记录。');
-        
-        // Step 2: Generate Panel Videos
-        const allGeneratedPanelUrls: (string | null)[] = new Array(comicStripImages.length).fill(null);
-        const panelConcurrencyLimit = 2;
-        for (let i = 0; i < comicStripImages.length; i += panelConcurrencyLimit) {
-            const chunk = comicStripImages.slice(i, i + panelConcurrencyLimit);
-            await Promise.all(chunk.map(async (image, chunkIndex) => {
-                const originalIndex = i + chunkIndex;
-                setComicStripPanelStatuses(prev => { const newStatuses = [...prev]; newStatuses[originalIndex] = 'generating'; return newStatuses; });
-                const script = comicStripVideoScripts[originalIndex];
-                if (!script?.trim()) {
-                    setComicStripPanelStatuses(prev => { const newStatuses = [...prev]; newStatuses[originalIndex] = 'completed'; return newStatuses; });
-                    return;
-                }
-                try {
-                    const file = await base64ToFile(image.src, `comic-panel-${originalIndex}.png`);
-                    let operation = await generateVideo(script, file, '16:9', 'subtle', apiKey);
-                    while (!operation.done) {
-                        await new Promise(resolve => setTimeout(resolve, 5000));
-                        operation = await getVideosOperation(operation, apiKey);
-                    }
-                    const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-                    if (downloadLink) {
-                        const finalUrl = `${downloadLink}&key=${apiKey}`;
-                        allGeneratedPanelUrls[originalIndex] = finalUrl;
-                        setComicStripVideoUrls(prev => { const newUrls = [...prev]; newUrls[originalIndex] = finalUrl; return newUrls; });
-                    } else {
-                        throw new Error(`Failed to get video URI for panel ${originalIndex + 1}`);
-                    }
-                } catch (err) {
-                     console.error(`Failed to generate video for panel ${originalIndex + 1}.`, err);
-                } finally {
-                    setComicStripPanelStatuses(prev => { const newStatuses = [...prev]; newStatuses[originalIndex] = 'completed'; return newStatuses; });
-                }
-            }));
-        }
-
-        // Step 3: Generate Transitions
-        setComicStripVideoGenerationPhase('generating_transitions');
-        const numTransitions = comicStripImages.length - 1;
-        const allGeneratedTransitionUrls: (string | null)[] = new Array(numTransitions).fill(null);
-
-        if (numTransitions > 0) {
-            const transitionConcurrencyLimit = 2;
-            for (let i = 0; i < numTransitions; i += transitionConcurrencyLimit) {
-                const chunkIndices = Array.from({ length: Math.min(transitionConcurrencyLimit, numTransitions - i) }, (_, k) => i + k);
-                
-                await Promise.all(chunkIndices.map(async (index) => {
-                    setComicStripTransitionStatuses(prev => { const newStatuses = [...prev]; newStatuses[index] = 'generating'; return newStatuses; });
-
-                    try {
-                        const startImage = comicStripImages[index];
-                        const nextSceneScript = comicStripVideoScripts[index + 1];
-
-                        if (!nextSceneScript?.trim()) {
-                             return; // Skip if next script is empty
-                        }
-
-                        let operation = await generateVideoTransition(startImage, nextSceneScript, comicStripStory, comicStripStyle, apiKey);
-                        
-                        while (!operation.done) {
-                            await new Promise(resolve => setTimeout(resolve, 5000));
-                            operation = await getVideosOperation(operation, apiKey);
-                        }
-
-                        const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-                        if (downloadLink) {
-                            const finalUrl = `${downloadLink}&key=${apiKey}`;
-                            allGeneratedTransitionUrls[index] = finalUrl;
-                            setComicStripTransitionUrls(prev => { const newUrls = [...prev]; newUrls[index] = finalUrl; return newUrls; });
-                        } else {
-                            throw new Error(`Failed to get video URI for transition ${index + 1}`);
-                        }
-                    } catch (err) {
-                        console.error(`Failed to generate video for transition ${index + 1}.`, err);
-                    } finally {
-                        setComicStripTransitionStatuses(prev => { const newStatuses = [...prev]; newStatuses[index] = 'completed'; return newStatuses; });
-                    }
-                }));
-            }
-        }
-        
-        setComicStripVideoGenerationPhase('completed');
-        
-        // Step 4: Save History Record
-        const newRecord: HistoryRecord = {
-            id: `${Date.now()}`,
-            mode: 'comicStrip',
-            prompt: parentRecord.prompt,
-            style: parentRecord.style,
-            model: parentRecord.model,
-            images: parentRecord.images,
-            thumbnail: parentRecord.thumbnail,
-            timestamp: Date.now(),
-            comicStripNumImages: parentRecord.comicStripNumImages,
-            comicStripPanelPrompts: parentRecord.comicStripPanelPrompts,
-            videoScripts: comicStripVideoScripts,
-            videoUrls: allGeneratedPanelUrls,
-            transitionUrls: allGeneratedTransitionUrls,
-            parentId: parentRecord.id,
-            comicStripType: 'video',
-            transitionOption: 'ai_smart',
-        };
-        await addHistory(newRecord);
-        setHistory(prev => sortHistory([newRecord, ...prev]));
-        setSelectedHistoryId(newRecord.id);
-
-    } catch (err) {
-        setError(err instanceof Error ? err.message : '生成带转场的视频时发生错误。');
-        setComicStripVideoGenerationPhase('editing');
-    }
+    setError(VIDEO_UNSUPPORTED_MESSAGE);
+    setComicStripVideoGenerationPhase('idle');
   };
 
 
-const handleRegenerateSinglePanel = async (index: number) => {
-    if (!apiKey || !comicStripImages[index] || !comicStripVideoScripts[index]) {
-        setError('无法重新生成，缺少必要信息。');
-        return;
-    }
+  const handleRegenerateSinglePanel = async (index: number) => {
+    if (!apiKey) return;
+    setError(VIDEO_UNSUPPORTED_MESSAGE);
+    setComicStripVideoGenerationPhase('idle');
+  };
 
-    if (comicStripPanelStatuses.some(s => s === 'generating')) {
-        return;
-    }
-    
-    setIsLoading(true);
-    setComicStripVideoGenerationPhase('generating_panels');
-    setError(null);
-
-    setComicStripPanelStatuses(prev => {
-        const newStatuses: ComicStripPanelStatus[] = [...prev];
-        newStatuses[index] = 'generating';
-        return newStatuses;
-    });
-
-    try {
-        const image = comicStripImages[index];
-        const script = comicStripVideoScripts[index];
-        const file = await base64ToFile(image.src, `comic-panel-${index}.png`);
-        let operation = await generateVideo(script, file, '16:9', 'subtle', apiKey);
-
-        while (!operation.done) {
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            operation = await getVideosOperation(operation, apiKey);
-        }
-        
-        const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-        if (downloadLink) {
-            const finalUrl = `${downloadLink}&key=${apiKey}`;
-            setComicStripVideoUrls(prev => {
-                const newUrls = [...prev];
-                newUrls[index] = finalUrl;
-                return newUrls;
-            });
-
-            const videoRecord = history.find(rec => rec.parentId === selectedHistoryId && rec.comicStripType === 'video');
-            if (videoRecord) {
-                const updatedVideoUrls = [...(videoRecord.videoUrls || [])];
-                updatedVideoUrls[index] = finalUrl;
-                const updatedRecord = { ...videoRecord, videoUrls: updatedVideoUrls, timestamp: Date.now() };
-                await addHistory(updatedRecord);
-                setHistory(prev => sortHistory(prev.map(item => item.id === updatedRecord.id ? updatedRecord : item)));
-            }
-        } else {
-             throw new Error(`面板 ${index + 1} 视频生成失败。`);
-        }
-    } catch (err) {
-        setError(err instanceof Error ? err.message : `面板 ${index + 1} 重新生成时发生错误。`);
-    } finally {
-        setComicStripPanelStatuses(prev => {
-            const newStatuses: ComicStripPanelStatus[] = [...prev];
-            newStatuses[index] = 'completed';
-            return newStatuses;
-        });
-        setComicStripVideoGenerationPhase('completed');
-        setIsLoading(false);
-    }
-};
-
-const handleOpenComicPanelEditor = (index: number) => {
+  const handleOpenComicPanelEditor = (index: number) => {
     const imageRecord = history.find(rec => rec.id === selectedHistoryId);
     if (!imageRecord || !imageRecord.comicStripPanelPrompts || !imageRecord.comicStripPanelPrompts[index]) {
         setError('找不到用于编辑的提示词。');
@@ -591,11 +358,11 @@ const handleOpenComicPanelEditor = (index: number) => {
         image: imageToEdit,
         prompt: '',
     });
-};
+  };
 
-const handleComicPanelEditComplete = async (index: number, newImageSrc: string, newPrompt: string) => {
+  const handleComicPanelEditComplete = async (index: number, newImageSrc: string, newPrompt: string) => {
     if (!apiKey) {
-        setError('请先设置您的 Gemini API Key。');
+        setError('请先设置您的 OpenAI API Key。');
         return;
     }
     
@@ -636,7 +403,7 @@ const handleComicPanelEditComplete = async (index: number, newImageSrc: string, 
     } finally {
         setIsLoading(false);
     }
-};
+  };
   
   const handleComicStripScriptChange = (index: number, newScript: string) => {
       setComicStripVideoScripts(prev => {
@@ -692,7 +459,7 @@ const handleComicPanelEditComplete = async (index: number, newImageSrc: string, 
 
   const handleGenerateTextToImage = async () => {
     if (!apiKey) {
-      setError('请先设置您的 Gemini API Key。');
+      setError('请先设置您的 OpenAI API Key。');
       setIsApiKeyModalOpen(true);
       return;
     }
@@ -702,7 +469,7 @@ const handleComicPanelEditComplete = async (index: number, newImageSrc: string, 
 
     try {
         const finalPrompt = buildStructuredPrompt(textToImagePrompt, textToImageKeywords);
-        const imageUrls = await generateTextToImage(finalPrompt, textToImageNegativePrompt, apiKey, textToImageNumImages, textToImageAspectRatio);
+        const imageUrls = await generateTextToImage(finalPrompt, textToImageNegativePrompt, apiKey, textToImageNumImages, textToImageAspectRatio, apiBaseUrl || undefined, selectedImageModel);
         const resizedImageUrls = await Promise.all(imageUrls.map(src => resizeImage(src, 800)));
         const imagesWithIds: GeneratedImage[] = resizedImageUrls.map((src, index) => ({
             id: `${Date.now()}-${index}`,
@@ -718,13 +485,14 @@ const handleComicPanelEditComplete = async (index: number, newImageSrc: string, 
                 mode: 'textToImage',
                 prompt: textToImagePrompt,
                 negativePrompt: textToImageNegativePrompt,
-                images: imagesWithIds,
-                thumbnail,
-                timestamp: Date.now(),
-                numberOfImages: textToImageNumImages,
-                aspectRatio: textToImageAspectRatio,
-                selectedKeywords: textToImageKeywords,
-            };
+            images: imagesWithIds,
+            thumbnail,
+            timestamp: Date.now(),
+            numberOfImages: textToImageNumImages,
+            aspectRatio: textToImageAspectRatio,
+            selectedKeywords: textToImageKeywords,
+            model: selectedImageModel,
+        };
             await addHistory(newRecord);
             setHistory(prev => sortHistory([newRecord, ...prev]));
             setSelectedHistoryId(newRecord.id);
@@ -773,6 +541,7 @@ const handleComicPanelEditComplete = async (index: number, newImageSrc: string, 
             inspirationAspectRatio: settings.aspectRatio,
             inspirationStrength: settings.strength,
             parentId: parentRecord ? parentRecord.id : null,
+            model: selectedImageModel,
         };
         await addHistory(newRecord);
         setHistory(prev => sortHistory([newRecord, ...prev]));
@@ -798,6 +567,7 @@ const handleComicPanelEditComplete = async (index: number, newImageSrc: string, 
             images: [finalGeneratedImage],
             thumbnail,
             sourceImage: sourceImageBase64,
+            model: selectedImageModel,
         };
         await addHistory(newRecord);
         setHistory(prev => sortHistory([newRecord, ...prev]));
@@ -887,7 +657,7 @@ const handleComicPanelEditComplete = async (index: number, newImageSrc: string, 
         setAppMode('wiki');
         setWikiPrompt(item.prompt);
         setActiveStyle(item.style || ImageStyle.ILLUSTRATION);
-        setWikiModel(item.model || ImageModel.IMAGEN);
+        setWikiModel(item.model || DEFAULT_IMAGE_MODEL);
         setCachedImages(prevCache => ({
             ...prevCache,
             [item.prompt]: {
@@ -1115,17 +885,33 @@ const handleComicPanelEditComplete = async (index: number, newImageSrc: string, 
     setPreviewImageIndex(null);
   };
 
-   const handleApiKeySave = (newKey: string) => {
-    if (newKey.trim()) {
-      const trimmedKey = newKey.trim();
-      setApiKey(trimmedKey);
-      // 只有在非环境变量API Key的情况下才保存到localStorage
-      if (!isEnvApiKey) {
-        localStorage.setItem('gemini-api-key-generic', trimmedKey);
-      }
-      setIsApiKeyModalOpen(false);
-      setError(null); 
+  const handleApiKeySave = (newKey: string, newBaseUrl: string, newModel: string) => {
+    const trimmedKey = newKey.trim();
+    const trimmedBaseUrl = newBaseUrl.trim();
+    const trimmedModel = (newModel || '').trim() || DEFAULT_IMAGE_MODEL;
+    if (!trimmedKey) {
+      return;
     }
+
+    setApiKey(trimmedKey);
+    setApiBaseUrl(trimmedBaseUrl);
+    setSelectedImageModel(trimmedModel);
+    setWikiModel(trimmedModel);
+
+    if (!isEnvApiKey) {
+      localStorage.setItem('openai-api-key', trimmedKey);
+      if (trimmedBaseUrl) {
+        localStorage.setItem('openai-base-url', trimmedBaseUrl);
+      } else {
+        localStorage.removeItem('openai-base-url');
+      }
+      if (trimmedModel) {
+        localStorage.setItem('openai-image-model', trimmedModel);
+      }
+    }
+
+    setIsApiKeyModalOpen(false);
+    setError(null); 
   };
   
   // 新增导入导出处理函数
@@ -1265,7 +1051,7 @@ const handleComicPanelEditComplete = async (index: number, newImageSrc: string, 
 
   // Handlers to clear selection when inputs change
   const handleWikiPromptChange = (prompt: string) => { setWikiPrompt(prompt); setSelectedHistoryId(null); };
-  const handleWikiModelChange = (model: ImageModel) => { setWikiModel(model); setSelectedHistoryId(null); };
+  const handleWikiModelChange = (model: ImageModel) => { setWikiModel(model); setSelectedImageModel(model); setSelectedHistoryId(null); };
   const handleComicStripStoryChange = (story: string) => { setComicStripStory(story); setSelectedHistoryId(null); };
   const handleComicStripStyleChange = (style: ImageStyle) => { setComicStripStyle(style); setSelectedHistoryId(null); };
   const handleComicStripNumImagesChange = (num: number) => { setComicStripNumImages(num); setSelectedHistoryId(null); };
@@ -1377,6 +1163,8 @@ const handleComicPanelEditComplete = async (index: number, newImageSrc: string, 
       {appMode === 'textToImage' && (
         <TextToImage
             apiKey={apiKey}
+            apiBaseUrl={apiBaseUrl}
+            imageModel={selectedImageModel}
             onApiKeyNeeded={() => setIsApiKeyModalOpen(true)}
             onGenerate={handleGenerateTextToImage}
             prompt={textToImagePrompt}
@@ -1399,6 +1187,8 @@ const handleComicPanelEditComplete = async (index: number, newImageSrc: string, 
       {appMode === 'imageToImage' && (
         <ImageToImage
             apiKey={apiKey}
+            apiBaseUrl={apiBaseUrl}
+            imageModel={selectedImageModel}
             onApiKeyNeeded={() => setIsApiKeyModalOpen(true)}
             onGenerationStart={handleCreativeGenerationStart}
             onGenerationEnd={handleCreativeGenerationEnd}
@@ -1424,6 +1214,8 @@ const handleComicPanelEditComplete = async (index: number, newImageSrc: string, 
       {appMode === 'infiniteCanvas' && (
         <InfiniteCanvas
             apiKey={apiKey}
+            apiBaseUrl={apiBaseUrl}
+            imageModel={selectedImageModel}
             onApiKeyNeeded={() => setIsApiKeyModalOpen(true)}
             onResult={handleInfiniteCanvasResult}
             initialPrompt={infiniteCanvasPrompt}
@@ -1439,6 +1231,8 @@ const handleComicPanelEditComplete = async (index: number, newImageSrc: string, 
       {appMode === 'video' && (
         <ImageToVideo
             apiKey={apiKey}
+            apiBaseUrl={apiBaseUrl}
+            imageModel={selectedImageModel}
             onApiKeyNeeded={() => setIsApiKeyModalOpen(true)}
             onResult={handleVideoResult}
             initialPrompt={videoPrompt}
@@ -1481,6 +1275,8 @@ const handleComicPanelEditComplete = async (index: number, newImageSrc: string, 
         onClose={() => setIsApiKeyModalOpen(false)}
         onSave={handleApiKeySave}
         currentApiKey={isEnvApiKey ? null : apiKey} // 如果是环境变量API Key，则不显示当前key
+        currentBaseUrl={apiBaseUrl}
+        currentModel={selectedImageModel}
       />
 
       <ComicPanelEditorModal
@@ -1488,6 +1284,8 @@ const handleComicPanelEditComplete = async (index: number, newImageSrc: string, 
         onClose={() => setEditingComicPanel(null)}
         panelData={editingComicPanel}
         apiKey={apiKey}
+        apiBaseUrl={apiBaseUrl}
+        imageModel={selectedImageModel}
         onComplete={handleComicPanelEditComplete}
         onApiKeyNeeded={() => setIsApiKeyModalOpen(true)}
       />

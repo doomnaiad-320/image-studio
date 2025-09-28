@@ -1,7 +1,7 @@
 // components/ComicPanelEditorModal.tsx
 import React, { useState, useEffect } from 'react';
 import { GeneratedImage } from '../types';
-import { editComicPanel } from '../services/geminiService';
+import { editComicPanel } from '../services/openaiService';
 import { SparklesIcon } from './icons/SparklesIcon';
 
 interface ComicPanelEditorModalProps {
@@ -13,6 +13,8 @@ interface ComicPanelEditorModalProps {
     prompt: string;
   } | null;
   apiKey: string | null;
+  apiBaseUrl?: string;
+  imageModel?: string;
   onComplete: (index: number, newImageSrc: string, newPrompt: string) => void;
   onApiKeyNeeded: () => void;
 }
@@ -22,6 +24,8 @@ export const ComicPanelEditorModal: React.FC<ComicPanelEditorModalProps> = ({
   onClose,
   panelData,
   apiKey,
+  apiBaseUrl,
+  imageModel,
   onComplete,
   onApiKeyNeeded,
 }) => {
@@ -55,7 +59,7 @@ export const ComicPanelEditorModal: React.FC<ComicPanelEditorModalProps> = ({
     setError(null);
 
     try {
-      const newImageSrc = await editComicPanel(panelData.image.src, editedPrompt, apiKey);
+      const newImageSrc = await editComicPanel(panelData.image.src, editedPrompt, apiKey, apiBaseUrl || undefined, imageModel);
       onComplete(panelData.index, newImageSrc, editedPrompt);
     } catch (err) {
       setError(err instanceof Error ? err.message : '发生未知错误。');

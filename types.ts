@@ -13,10 +13,9 @@ export enum ImageStyle {
   THREE_D_ANIMATION = 'THREE_D_ANIMATION',
 }
 
-export enum ImageModel {
-  IMAGEN = 'imagen-4.0-generate-001',
-  NANO_BANANA = 'gemini-2.5-flash-image-preview',
-}
+export type ImageModel = string;
+
+export const DEFAULT_IMAGE_MODEL: ImageModel = 'gpt-image-1';
 
 export interface GeneratedImage {
   id: string;

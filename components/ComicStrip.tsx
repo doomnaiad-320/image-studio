@@ -1,7 +1,7 @@
 // components/ComicStrip.tsx
 
 import React, { useState } from 'react';
-import { ImageStyle, GeneratedImage, ComicStripGenerationPhase, ComicStripPanelStatus, ImageModel, ComicStripTransitionStatus } from '../types';
+import { ImageStyle, GeneratedImage, ComicStripGenerationPhase, ComicStripPanelStatus, ComicStripTransitionStatus } from '../types';
 import { ImageGrid } from './ImageGrid';
 import { EmptyState } from './EmptyState';
 import { LoadingState } from './LoadingState';

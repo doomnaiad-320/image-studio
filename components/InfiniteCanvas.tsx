@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ImageUploader } from './ImageUploader';
-import { generateInpainting } from '../services/geminiService';
+import { generateInpainting } from '../services/openaiService';
 import { fileToBase64, base64ToFile } from '../utils/imageUtils';
 import { DownloadIcon } from './icons/DownloadIcon';
 import { XMarkIcon } from './icons/XMarkIcon';
@@ -13,6 +13,8 @@ import { ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, ChevronDownIcon } fro
 
 interface InfiniteCanvasProps {
   apiKey: string | null;
+  apiBaseUrl?: string;
+  imageModel?: string;
   onApiKeyNeeded: () => void;
   onResult: (prompt: string, finalImage: string, sourceFile: File) => Promise<void>;
   initialPrompt: string;
@@ -41,6 +43,8 @@ const MAX_DIMENSION = 20480;
 
 export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
   apiKey,
+  apiBaseUrl,
+  imageModel,
   onApiKeyNeeded,
   onResult,
   initialPrompt,
@@ -414,7 +418,7 @@ export const InfiniteCanvas: React.FC<InfiniteCanvasProps> = ({
       const maskFile = await base64ToFile(maskCanvas.toDataURL('image/png'), 'mask.png');
       
       const outpaintingPrompt = `Task: Outpainting. Using the provided mask, fill the masked (white) area of the original image with content that seamlessly extends the existing image, following this description: "${initialPrompt}". Maintain the original image's style and content and ensure a natural transition.`;
-      const result = await generateInpainting(outpaintingPrompt, originalFile, maskFile, apiKey);
+      const result = await generateInpainting(outpaintingPrompt, originalFile, maskFile, apiKey, apiBaseUrl || undefined, imageModel);
 
       if (result.length > 0) {
         setUndoStack(prev => [...prev, oldImage.src]);
